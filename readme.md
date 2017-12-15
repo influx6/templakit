@@ -5,7 +5,7 @@ TemplaKit code generates code from provided template files of the user.
 ## Install
 
 ```
-go get -u github.com/gokit/sqlkit
+go get -u github.com/gokit/templakit
 ```
 
 ## Usage
