@@ -16,8 +16,8 @@ import (
 func main() {
 	flags.Run("templakit", flags.Command{
 		Name:      "generate",
-		ShortDesc: "Generates mongo CRUD packages for structs",
-		Desc:      "Generates from go packages to create CRUD implementations for types using mongodb",
+		ShortDesc: "Generates code from template source",
+		Desc:      "Generates code from template source",
 		Action: func(ctx context.Context) error {
 			force, _ := ctx.Bag().GetBool("force")
 			dest, _ := ctx.Bag().GetString("dest")
