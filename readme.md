@@ -1,5 +1,7 @@
 Templatekit
-============
+------------
+[![Go Report Card](https://goreportcard.com/badge/github.com/gokit/templakit)](https://goreportcard.com/report/github.com/gokit/templakit)
+
 TemplaKit code generates code from provided template files of the user.
 
 ## Install
