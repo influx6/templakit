@@ -1,9 +1,7 @@
-// Package context is built out of my desire to understand the http context
-// library and as an experiement in such a library works.
-package context
+package bag
 
 import (
-	gcontext "context"
+	"context"
 	"sync"
 	"time"
 )
@@ -37,155 +35,6 @@ type ValueBag interface {
 	// context's store.
 	WithValue(key interface{}, value interface{}) ValueBag
 }
-
-// IsExpired returns true/false whether the provided CancelContext has expired.
-func IsExpired(c CancelContext) bool {
-	select {
-	case <-c.Done():
-		return true
-	case <-time.After(5 * time.Millisecond):
-		return false
-	}
-}
-
-// Deadline exposes a single method to return expected deadline for context.
-type Deadline interface {
-	Deadline() (time.Time, bool)
-}
-
-// CancelContext defines a type which provides Done signal for cancelling operations.
-type CancelContext interface {
-	Deadline
-	Done() <-chan struct{}
-}
-
-// Context defines a type which holds a cancel signal and contains
-// a bag of values.
-type Context interface {
-	CancelContext
-	Bag() ValueBag
-}
-
-// CancelableContext defines a type which provides Done signal for cancelling operations.
-type CancelableContext interface {
-	Context
-	Cancel()
-}
-
-// CnclContext defines a struct to implement the CancelContext.
-type CnclContext struct {
-	close chan struct{}
-	once  sync.Once
-	bag   ValueBag
-}
-
-// MakeGoogleContextFrom returns a goole context package instance by using the CancelContext
-// to cancel the returned context.
-func MakeGoogleContextFrom(ctx CancelContext) gcontext.Context {
-	cmx, canceler := gcontext.WithCancel(gcontext.Background())
-	go func() {
-		<-ctx.Done()
-		canceler()
-	}()
-	return cmx
-}
-
-// New returns a new instance of a CancelableContext with ValueBag set.
-func New() CancelableContext {
-	return &CnclContext{close: make(chan struct{}), bag: NewValueBag()}
-}
-
-// WithTimeout returns a new Context made from provided duration.
-func WithTimeout(bag ValueBag, d time.Duration) Context {
-	return NewExpiringCnclContext(nil, d, bag)
-}
-
-// NewCnclContext returns a new instance of the CnclContext.
-func NewCnclContext(bag ValueBag) *CnclContext {
-	return &CnclContext{close: make(chan struct{}), bag: bag}
-}
-
-// Bag returns an associated ValueBag for this instance.
-func (cn *CnclContext) Bag() ValueBag {
-	if cn.bag == nil {
-		cn.bag = NewValueBag()
-	}
-
-	return cn.bag
-}
-
-// Cancel closes the internal channel of the contxt
-func (cn *CnclContext) Cancel() {
-	cn.once.Do(func() {
-		close(cn.close)
-	})
-}
-
-// Deadline returns giving time when context is expected to be canceled.
-func (cn *CnclContext) Deadline() (time.Time, bool) {
-	return time.Time{}, false
-}
-
-// Done returns a channel to signal ending of op.
-// It implements the CancelContext.
-func (cn *CnclContext) Done() <-chan struct{} {
-	return cn.close
-}
-
-// ExpiringCnclContext defines a struct to implement the CancelContext.
-type ExpiringCnclContext struct {
-	close    chan struct{}
-	action   func()
-	once     sync.Once
-	duration time.Duration
-	deadline time.Time
-	bag      ValueBag
-}
-
-// NewExpiringCnclContext returns a new instance of the CnclContext.
-func NewExpiringCnclContext(action func(), timeout time.Duration, bag ValueBag) *ExpiringCnclContext {
-	exp := &ExpiringCnclContext{close: make(chan struct{}), action: action, bag: bag, duration: timeout, deadline: time.Now().Add(timeout)}
-	go exp.monitor()
-	return exp
-}
-
-// Deadline returns giving time when context is expected to be canceled.
-func (cn *ExpiringCnclContext) Deadline() (time.Time, bool) {
-	return cn.deadline, true
-}
-
-// Cancel closes the internal channel of the contxt
-func (cn *ExpiringCnclContext) Cancel() {
-	cn.once.Do(func() {
-		close(cn.close)
-		cn.bag = nil
-		if cn.action != nil {
-			cn.action()
-		}
-	})
-}
-
-// Bag returns an associated ValueBag for this instance.
-func (cn *ExpiringCnclContext) Bag() ValueBag {
-	if cn.bag == nil {
-		cn.bag = NewValueBag()
-	}
-
-	return cn.bag
-}
-
-// Done returns a channel to signal ending of op.
-// It implements the CancelContext.
-func (cn *ExpiringCnclContext) Done() <-chan struct{} {
-	return cn.close
-}
-
-func (cn *ExpiringCnclContext) monitor() {
-	<-time.After(cn.duration)
-	cn.Cancel()
-}
-
-//================================================================================
 
 // vbag defines a struct for bundling a context against specific
 // use cases with a explicitly set duration which clears all its internal
@@ -367,20 +216,20 @@ func (c *vbag) Get(key interface{}) (value interface{}, found bool) {
 
 //==============================================================================
 
-// GoogleContext implements a decorator for googles context package.
-type GoogleContext struct {
-	gcontext.Context
+// googleContext implements a decorator for googles context package.
+type googleContext struct {
+	context.Context
 }
 
 // FromContext returns a new context object that meets the Context interface.
-func FromContext(ctx gcontext.Context) *GoogleContext {
-	var gc GoogleContext
+func FromContext(ctx context.Context) *googleContext {
+	var gc googleContext
 	gc.Context = ctx
 	return &gc
 }
 
 // GetDuration returns the giving value for the provided key if it exists else nil.
-func (g *GoogleContext) GetDuration(key interface{}) (time.Duration, bool) {
+func (g *googleContext) GetDuration(key interface{}) (time.Duration, bool) {
 	val := g.Context.Value(key)
 	if val == nil {
 		return 0, false
@@ -404,7 +253,7 @@ func (g *GoogleContext) GetDuration(key interface{}) (time.Duration, bool) {
 }
 
 // Get returns the giving value for the provided key if it exists else nil.
-func (g *GoogleContext) Get(key interface{}) (interface{}, bool) {
+func (g *googleContext) Get(key interface{}) (interface{}, bool) {
 	val := g.Context.Value(key)
 	if val == nil {
 		return val, false
@@ -414,7 +263,7 @@ func (g *GoogleContext) Get(key interface{}) (interface{}, bool) {
 }
 
 // GetBool returns the value type value of a key if it exists.
-func (g *GoogleContext) GetBool(key interface{}) (bool, bool) {
+func (g *googleContext) GetBool(key interface{}) (bool, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return false, false
@@ -425,7 +274,7 @@ func (g *GoogleContext) GetBool(key interface{}) (bool, bool) {
 }
 
 // GetFloat64 returns the value type value of a key if it exists.
-func (g *GoogleContext) GetFloat64(key interface{}) (float64, bool) {
+func (g *googleContext) GetFloat64(key interface{}) (float64, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return 0, false
@@ -436,7 +285,7 @@ func (g *GoogleContext) GetFloat64(key interface{}) (float64, bool) {
 }
 
 // GetFloat32 returns the value type value of a key if it exists.
-func (g *GoogleContext) GetFloat32(key interface{}) (float32, bool) {
+func (g *googleContext) GetFloat32(key interface{}) (float32, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return 0, false
@@ -447,7 +296,7 @@ func (g *GoogleContext) GetFloat32(key interface{}) (float32, bool) {
 }
 
 // GetInt8 returns the value type value of a key if it exists.
-func (g *GoogleContext) GetInt8(key interface{}) (int8, bool) {
+func (g *googleContext) GetInt8(key interface{}) (int8, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return 0, false
@@ -458,7 +307,7 @@ func (g *GoogleContext) GetInt8(key interface{}) (int8, bool) {
 }
 
 // GetInt16 returns the value type value of a key if it exists.
-func (g *GoogleContext) GetInt16(key interface{}) (int16, bool) {
+func (g *googleContext) GetInt16(key interface{}) (int16, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return 0, false
@@ -469,7 +318,7 @@ func (g *GoogleContext) GetInt16(key interface{}) (int16, bool) {
 }
 
 // GetInt64 returns the value type value of a key if it exists.
-func (g *GoogleContext) GetInt64(key interface{}) (int64, bool) {
+func (g *googleContext) GetInt64(key interface{}) (int64, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return 0, false
@@ -480,7 +329,7 @@ func (g *GoogleContext) GetInt64(key interface{}) (int64, bool) {
 }
 
 // GetInt32 returns the value type value of a key if it exists.
-func (g *GoogleContext) GetInt32(key interface{}) (int32, bool) {
+func (g *googleContext) GetInt32(key interface{}) (int32, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return 0, false
@@ -491,7 +340,7 @@ func (g *GoogleContext) GetInt32(key interface{}) (int32, bool) {
 }
 
 // GetInt returns the value type value of a key if it exists.
-func (g *GoogleContext) GetInt(key interface{}) (int, bool) {
+func (g *googleContext) GetInt(key interface{}) (int, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return 0, false
@@ -502,7 +351,7 @@ func (g *GoogleContext) GetInt(key interface{}) (int, bool) {
 }
 
 // GetString returns the value type value of a key if it exists.
-func (g *GoogleContext) GetString(key interface{}) (string, bool) {
+func (g *googleContext) GetString(key interface{}) (string, bool) {
 	val, found := g.Get(key)
 	if !found {
 		return "", false
